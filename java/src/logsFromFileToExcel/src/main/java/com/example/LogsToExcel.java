@@ -11,6 +11,8 @@ import java.nio.file.Paths;
 import java.util.Scanner;
 import java.util.ArrayList;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFCellStyle;
+import org.apache.poi.xssf.usermodel.XSSFColor;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 public class LogsToExcel {
@@ -63,11 +65,10 @@ public class LogsToExcel {
         return exceptions;
     }
 
-    private static void createExcel(ArrayList<String> exceptions, String excelFile, int flow, int project, String DMP,
-            String ENV, String TESTER) throws Exception {
+    private static void createExcel(ArrayList<String> exceptions, String excelFile,
+            int flow, int project, String DMP, String ENV, String TESTER) throws Exception {
 
         File file = new File(excelFile);
-
         Workbook workbook;
 
         if (file.exists()) {
@@ -108,29 +109,67 @@ public class LogsToExcel {
 
         Sheet sheet = workbook.createSheet(sheetName);
 
+        /* ================= HEADER STYLE ================= */
+
+        XSSFCellStyle headerStyle = (XSSFCellStyle) workbook.createCellStyle();
+        headerStyle.setFillForegroundColor(
+                new XSSFColor(new java.awt.Color(233, 113, 50), null)); // #E97132
+        headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+        Font headerFont = workbook.createFont();
+        headerFont.setBold(true);
+        headerStyle.setFont(headerFont);
+
+        /* ================= WRAP STYLE ================= */
+
+        CellStyle wrapStyle = workbook.createCellStyle();
+        wrapStyle.setWrapText(true);
+        wrapStyle.setVerticalAlignment(VerticalAlignment.TOP);
+
+        /* ================= CREATE HEADER ================= */
+
         Row header = sheet.createRow(0);
-        header.createCell(0).setCellValue("S.No.");
-        header.createCell(1).setCellValue("Exception");
-        header.createCell(2).setCellValue("DMP");
-        header.createCell(3).setCellValue("ENV");
-        header.createCell(4).setCellValue("Tester");
+
+        String[] headers = { "S.No.", "Exception", "DMP", "ENV", "Tester" };
+
+        for (int i = 0; i < headers.length; i++) {
+            Cell cell = header.createCell(i);
+            cell.setCellValue(headers[i]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        /* ================= DATA ROWS ================= */
 
         int rowNum = 1;
         for (String exception : exceptions) {
             Row row = sheet.createRow(rowNum);
 
             row.createCell(0).setCellValue(rowNum);
-            row.createCell(1).setCellValue(exception.trim());
+
+            Cell exceptionCell = row.createCell(1);
+            exceptionCell.setCellValue(exception.trim());
+            exceptionCell.setCellStyle(wrapStyle);
+
             row.createCell(2).setCellValue(DMP);
             row.createCell(3).setCellValue(ENV);
             row.createCell(4).setCellValue(TESTER);
 
+            row.setHeightInPoints(90);
+
             rowNum++;
         }
 
+        /* ================= COLUMN WIDTH ================= */
+
+        sheet.setColumnWidth(1, 100 * 256);
+
         for (int i = 0; i < 5; i++) {
-            sheet.autoSizeColumn(i);
+            if (i != 1) {
+                sheet.autoSizeColumn(i);
+            }
         }
+
+        /* ================= WRITE FILE ================= */
 
         try (FileOutputStream fos = new FileOutputStream(file)) {
             workbook.write(fos);
