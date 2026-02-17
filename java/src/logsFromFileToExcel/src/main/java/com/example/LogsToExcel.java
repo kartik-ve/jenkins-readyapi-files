@@ -1,13 +1,17 @@
 package com.example;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Scanner;
 import java.util.ArrayList;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 public class LogsToExcel {
 
@@ -15,7 +19,7 @@ public class LogsToExcel {
         if (args.length != 7 || !args[2].trim().matches("[1-7]")
                 || !(args[3].equalsIgnoreCase("CO") || args[3].equalsIgnoreCase("OE"))) {
             System.out.println(
-                    "Usage: java LogsToExcel <input_log_file> <input_excel_workbook> <flow_number (1-7)> <project (OE/CO)> <DMP> <env> <tester_name>");
+                    "Usage: java LogsToExcel <input_log_file> <excel_workbook_path> <flow_number (1-7)> <project (OE/CO)> <DMP> <env> <tester_name>");
             return;
         }
 
@@ -23,12 +27,14 @@ public class LogsToExcel {
         try (BufferedReader br = new BufferedReader(new FileReader(args[0]), 32 * 1024);
                 Scanner scanner = new Scanner(System.in);) {
             exceptions = findErrors(br);
+            Path excelPath = Paths.get(args[1].trim(), "Exceptions.xlsx");
+            String excelFile = excelPath.toString();
             int flow = Integer.parseInt(args[2]);
             int project = args[3].equalsIgnoreCase("OE") ? 1 : 2;
             String DMP = args[4].trim();
             String env = args[5].trim();
             String tester = args[6].trim();
-            addToExcel(exceptions, args[1], flow, project, DMP, env, tester);
+            createExcel(exceptions, excelFile, flow, project, DMP, env, tester);
         } catch (Exception e) {
             e.printStackTrace();
             return;
@@ -41,12 +47,13 @@ public class LogsToExcel {
         String line;
         StringBuilder exception = new StringBuilder();
         while ((line = br.readLine()) != null) {
-            if (line.trim().length() == 0) {
+            int len = line.trim().length();
+            if (len == 0) {
                 if (exception.length() > 0) {
                     exceptions.add(exception.toString().trim());
                     exception.setLength(0);
                 }
-            } else if (line.trim().length() < 15) {
+            } else if (len >= 13 && len <= 15) {
                 break;
             } else {
                 exception.append(line);
@@ -56,12 +63,20 @@ public class LogsToExcel {
         return exceptions;
     }
 
-    private static void addToExcel(ArrayList<String> exceptions, String excelFile, int flow, int project, String DMP,
-            String ENV,
-            String TESTER) throws Exception {
+    private static void createExcel(ArrayList<String> exceptions, String excelFile, int flow, int project, String DMP,
+            String ENV, String TESTER) throws Exception {
 
-        FileInputStream fis = new FileInputStream(excelFile);
-        Workbook workbook = WorkbookFactory.create(fis);
+        File file = new File(excelFile);
+
+        Workbook workbook;
+
+        if (file.exists()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                workbook = WorkbookFactory.create(fis);
+            }
+        } else {
+            workbook = new XSSFWorkbook();
+        }
 
         String sheetName;
         switch (flow) {
@@ -87,212 +102,40 @@ public class LogsToExcel {
                 sheetName = project == 1 ? "SU - OE" : "SU - CO";
                 break;
             default:
+                workbook.close();
                 throw new IllegalArgumentException("Invalid flow selection");
         }
 
-        Sheet sheet = workbook.getSheet(sheetName);
+        Sheet sheet = workbook.createSheet(sheetName);
 
-        DataFormatter formatter = new DataFormatter();
+        Row header = sheet.createRow(0);
+        header.createCell(0).setCellValue("S.No.");
+        header.createCell(1).setCellValue("Exception");
+        header.createCell(2).setCellValue("DMP");
+        header.createCell(3).setCellValue("ENV");
+        header.createCell(4).setCellValue("Tester");
 
-        String newLine = System.lineSeparator();
+        int rowNum = 1;
         for (String exception : exceptions) {
-            boolean exists = false;
-            if (exception.contains("GROUP ID = ")) {
-                String id = exception.split("GROUP ID = ")[1].split(" ")[0];
-                for (Row row : sheet) {
-                    Cell cell = row.getCell(1, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                    if (cell != null) {
-                        String value = formatter.formatCellValue(cell);
-                        if (value.contains(id)) {
-                            exists = true;
-                            break;
-                        }
-                    }
-                }
-            } else {
-                String[] lines = exception.split(newLine);
-                String identifier;
-                if (lines[1].trim().length() > 0) {
-                    if (lines[1].contains("Exception")) {
-                        identifier = lines[1];
-                    } else {
-                        identifier = lines[1].split("line")[0].trim();
-                    }
-                } else {
-                    identifier = lines[2];
-                }
+            Row row = sheet.createRow(rowNum);
 
-                for (Row row : sheet) {
-                    Cell cell = row.getCell(1, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                    if (cell != null) {
-                        String value = formatter.formatCellValue(cell);
-                        if (value.contains(identifier)) {
-                            exists = true;
-                            break;
-                        }
-                    }
-                }
-            }
+            row.createCell(0).setCellValue(rowNum);
+            row.createCell(1).setCellValue(exception.trim());
+            row.createCell(2).setCellValue(DMP);
+            row.createCell(3).setCellValue(ENV);
+            row.createCell(4).setCellValue(TESTER);
 
-            if (exists) {
-                continue;
-            }
-
-            boolean inserted = false;
-            for (Row row : sheet) {
-                if (row.getRowNum() == 0) {
-                    continue;
-                }
-
-                boolean isEmpty = true;
-                for (int c = 0; c <= 5; c++) {
-                    Cell cell = row.getCell(c, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                    if (cell != null) {
-                        isEmpty = false;
-                        break;
-                    }
-                }
-
-                if (isEmpty) {
-                    insertRow(sheet, row, exception, DMP, ENV, TESTER);
-                    inserted = true;
-                    break;
-                }
-            }
-
-            if (!inserted) {
-                int newRowNum = sheet.getLastRowNum() + 1;
-                insertRow(sheet, sheet.createRow(newRowNum), exception, DMP, ENV, TESTER);
-            }
+            rowNum++;
         }
 
-        // outer: for (String exception : exceptions) {
-        // String id = exception.split("GROUP ID = ")[1].split(" ")[0];
-        // for (Row row : sheet) {
-        // Cell cell = row.getCell(1, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-        // if (cell != null) {
-        // String value = formatter.formatCellValue(cell);
-        // if (value.contains(id)) {
-        // continue outer;
-        // }
-        // }
-        // }
+        for (int i = 0; i < 5; i++) {
+            sheet.autoSizeColumn(i);
+        }
 
-        // boolean inserted = false;
-        // for (Row row : sheet) {
-        // if (row.getRowNum() == 0)
-        // continue;
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            workbook.write(fos);
+        }
 
-        // boolean isEmpty = true;
-        // for (int c = 0; c <= 5; c++) {
-        // Cell cell = row.getCell(c, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-        // if (cell != null) {
-        // isEmpty = false;
-        // break;
-        // }
-        // }
-
-        // if (isEmpty) {
-        // insertRow(sheet, row, exception, DMP, ENV, TESTER);
-        // inserted = true;
-        // break;
-        // }
-        // }
-
-        // if (!inserted) {
-        // int newRowNum = sheet.getLastRowNum() + 1;
-        // insertRow(sheet, sheet.createRow(newRowNum), exception, DMP, ENV, TESTER);
-        // }
-        // }
-
-        // String newLine = System.lineSeparator();
-        // outer: for (String exception : excelExceptions.get(1)) {
-        // String[] lines = exception.split(newLine);
-        // String identifier;
-        // if (lines[1].trim().length() > 0) {
-        // if (lines[1].contains("Exception")) {
-        // identifier = lines[1];
-        // } else {
-        // identifier = lines[1].split("line")[0].trim();
-        // }
-        // } else {
-        // identifier = lines[2];
-        // }
-
-        // for (Row row : sheet) {
-        // Cell cell = row.getCell(1, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-        // if (cell != null) {
-        // String value = formatter.formatCellValue(cell);
-        // if (value.contains(identifier)) {
-        // continue outer;
-        // }
-        // }
-        // }
-
-        // boolean inserted = false;
-        // for (Row row : sheet) {
-        // if (row.getRowNum() == 0) {
-        // continue;
-        // }
-
-        // boolean isEmpty = true;
-        // for (int c = 0; c <= 5; c++) {
-        // Cell cell = row.getCell(c, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-        // if (cell != null) {
-        // isEmpty = false;
-        // break;
-        // }
-        // }
-
-        // if (isEmpty) {
-        // insertRow(sheet, row, exception, DMP, ENV, TESTER);
-        // inserted = true;
-        // break;
-        // }
-        // }
-
-        // if (!inserted) {
-        // int newRowNum = sheet.getLastRowNum() + 1;
-        // insertRow(sheet, sheet.createRow(newRowNum), exception, DMP, ENV, TESTER);
-        // }
-        // }
-
-        FileOutputStream fos = new FileOutputStream(excelFile);
-        workbook.write(fos);
-
-        fos.close();
         workbook.close();
-        fis.close();
-    }
-
-    private static void insertRow(Sheet sheet, Row row, String exception, String DMP, String ENV, String TESTER) {
-        Row templateRow = sheet.getRow(1);
-        copyRowFormatting(templateRow, row);
-
-        row.getCell(0).setCellValue(row.getRowNum());
-        row.getCell(1).setCellValue(exception.trim());
-        row.getCell(3).setCellValue(DMP);
-        row.getCell(4).setCellValue(ENV);
-        row.getCell(5).setCellValue(TESTER);
-    }
-
-    private static void copyRowFormatting(Row sourceRow, Row targetRow) {
-        if (sourceRow == null || targetRow == null)
-            return;
-
-        targetRow.setHeight(sourceRow.getHeight());
-
-        for (int c = 0; c <= 5; c++) {
-            Cell sourceCell = sourceRow.getCell(c, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-            Cell targetCell = targetRow.getCell(c);
-
-            if (targetCell == null) {
-                targetCell = targetRow.createCell(c);
-            }
-
-            if (sourceCell != null) {
-                targetCell.setCellStyle(sourceCell.getCellStyle());
-            }
-        }
     }
 }
