@@ -46,23 +46,41 @@ public class LogsToExcel {
     private static ArrayList<String> findErrors(BufferedReader br) throws IOException {
         ArrayList<String> exceptions = new ArrayList<>();
 
+        int openTags = 0;
         String line;
         StringBuilder exception = new StringBuilder();
         while ((line = br.readLine()) != null) {
             int len = line.trim().length();
-            if (len == 0) {
-                if (exception.length() > 0) {
-                    exceptions.add(exception.toString().trim());
-                    exception.setLength(0);
-                }
-            } else if (len >= 13 && len <= 15) {
+            if (len == 0 && openTags == 0) {
+                continue;
+            }
+            if (len >= 13 && len <= 15) {
                 break;
+            }
+
+            openTags += calculateOpenTags(line);
+            if (openTags == 0) {
+                exceptions.add(exception.toString().trim());
+                exception.setLength(0);
             } else {
                 exception.append(line);
             }
         }
 
         return exceptions;
+    }
+
+    private static int calculateOpenTags(String line) {
+        int open = 0;
+        for (byte b : line.getBytes()) {
+            if (b == '<') {
+                open++;
+            } else if (b == '>') {
+                open--;
+            }
+        }
+
+        return open;
     }
 
     private static void createExcel(ArrayList<String> exceptions, String excelFile,
