@@ -133,12 +133,20 @@ public class LogsToExcel {
         headerStyle.setFillForegroundColor(
                 new XSSFColor(new java.awt.Color(233, 113, 50), null)); // #E97132
         headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        headerStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+        headerStyle.setAlignment(HorizontalAlignment.CENTER);
 
         Font headerFont = workbook.createFont();
         headerFont.setBold(true);
         headerStyle.setFont(headerFont);
 
-        /* ================= WRAP STYLE ================= */
+        /* ================= CENTER STYLE (Non-exception columns) ================= */
+
+        CellStyle centerStyle = workbook.createCellStyle();
+        centerStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+        centerStyle.setAlignment(HorizontalAlignment.CENTER);
+
+        /* ================= WRAP STYLE (Exception column) ================= */
 
         CellStyle wrapStyle = workbook.createCellStyle();
         wrapStyle.setWrapText(true);
@@ -162,15 +170,25 @@ public class LogsToExcel {
         for (String exception : exceptions) {
             Row row = sheet.createRow(rowNum);
 
-            row.createCell(0).setCellValue(rowNum);
+            Cell c0 = row.createCell(0);
+            c0.setCellValue(rowNum);
+            c0.setCellStyle(centerStyle);
 
             Cell exceptionCell = row.createCell(1);
             exceptionCell.setCellValue(exception.trim());
             exceptionCell.setCellStyle(wrapStyle);
 
-            row.createCell(2).setCellValue(DMP);
-            row.createCell(3).setCellValue(ENV);
-            row.createCell(4).setCellValue(TESTER);
+            Cell c2 = row.createCell(2);
+            c2.setCellValue(DMP);
+            c2.setCellStyle(centerStyle);
+
+            Cell c3 = row.createCell(3);
+            c3.setCellValue(ENV);
+            c3.setCellStyle(centerStyle);
+
+            Cell c4 = row.createCell(4);
+            c4.setCellValue(TESTER);
+            c4.setCellStyle(centerStyle);
 
             row.setHeightInPoints(90);
 
