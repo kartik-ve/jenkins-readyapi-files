@@ -1,4 +1,4 @@
-package com.example;
+package com.amdocs.sanity;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -7,44 +7,37 @@ import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Scanner;
 import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFColor;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-public class LogsToExcel {
+final class LogsToExcel {
 
-    public static void main(String[] args) {
-        if (args.length != 7 || !args[2].trim().matches("[1-7]")
-                || !(args[3].equalsIgnoreCase("CO") || args[3].equalsIgnoreCase("OE"))) {
-            System.out.println(
-                    "Usage: java LogsToExcel <input_log_file> <excel_workbook_path> <flow_number (1-7)> <project (OE/CO)> <DMP> <env> <tester_name>");
-            return;
+    private LogsToExcel() {
+    }
+
+    static void log(Path logFile, Path excelPath, String flow, int project, String dmp, String env, String tester) throws IOException {
+        List<String> exceptions;
+
+        Flow f;
+        try {
+            f = Flow.valueOf(flow.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid flow: " + flow, e);
         }
 
-        ArrayList<String> exceptions;
-        try (BufferedReader br = new BufferedReader(new FileReader(args[0]), 32 * 1024);
-                Scanner scanner = new Scanner(System.in);) {
+        try (BufferedReader br = new BufferedReader(new FileReader(logFile.toFile()), 32 * 1024);) {
             exceptions = findErrors(br);
-            Path excelPath = Paths.get(args[1].trim(), "Exceptions.xlsx");
-            String excelFile = excelPath.toString();
-            int flow = Integer.parseInt(args[2]);
-            int project = args[3].equalsIgnoreCase("OE") ? 1 : 2;
-            String DMP = args[4].trim();
-            String env = args[5].trim();
-            String tester = args[6].trim();
-            createExcel(exceptions, excelFile, flow, project, DMP, env, tester);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return;
+            createExcel(exceptions, excelPath, f, project, dmp, env, tester);
         }
     }
 
-    private static ArrayList<String> findErrors(BufferedReader br) throws IOException {
-        ArrayList<String> exceptions = new ArrayList<>();
+    private static List<String> findErrors(BufferedReader br) throws IOException {
+        List<String> exceptions = new ArrayList<>();
 
         int openTags = 0;
         String line;
@@ -54,8 +47,20 @@ public class LogsToExcel {
             if (len == 0 && openTags == 0) {
                 continue;
             }
+
+            // Check if session-id encountered at EOF
             if (len >= 13 && len <= 15) {
-                break;
+                boolean isDigitOnly = true;
+                for (char c : line.trim().toCharArray()) {
+                    if (!Character.isDigit(c)) {
+                        isDigitOnly = false;
+                        break;
+                    }
+                }
+
+                if (!isDigitOnly) {
+                    break;
+                }
             }
 
             openTags += calculateOpenTags(line);
@@ -72,10 +77,10 @@ public class LogsToExcel {
 
     private static int calculateOpenTags(String line) {
         int open = 0;
-        for (byte b : line.getBytes()) {
-            if (b == '<') {
+        for (char c : line.toCharArray()) {
+            if (c == '<') {
                 open++;
-            } else if (b == '>') {
+            } else if (c == '>') {
                 open--;
             }
         }
@@ -83,10 +88,30 @@ public class LogsToExcel {
         return open;
     }
 
-    private static void createExcel(ArrayList<String> exceptions, String excelFile,
-            int flow, int project, String DMP, String ENV, String TESTER) throws Exception {
+    private static enum Flow {
+        NC("NC"),
+        COS("COS"),
+        CR("CR"),
+        RP("RP"),
+        MT("MT"),
+        BT("BT"),
+        SU("SU");
 
-        File file = new File(excelFile);
+        private final String label;
+
+        Flow(String label) {
+            this.label = label;
+        }
+
+        String sheetName(boolean isOE) {
+            return label + (isOE ? " - OE" : " - CO");
+        }
+    }
+
+    private static void createExcel(List<String> exceptions, Path excelPath,
+            Flow flow, int project, String dmp, String env, String tester) throws IOException {
+
+        File file = excelPath.toFile();
         Workbook workbook;
 
         if (file.exists()) {
@@ -97,35 +122,13 @@ public class LogsToExcel {
             workbook = new XSSFWorkbook();
         }
 
-        String sheetName;
-        switch (flow) {
-            case 1:
-                sheetName = project == 1 ? "NC - OE" : "NC - CO";
-                break;
-            case 2:
-                sheetName = project == 1 ? "COS - OE" : "COS - CO";
-                break;
-            case 3:
-                sheetName = project == 1 ? "CE - OE" : "CE - CO";
-                break;
-            case 4:
-                sheetName = project == 1 ? "RP - OE" : "RP - CO";
-                break;
-            case 5:
-                sheetName = project == 1 ? "Move - OE" : "Move - CO";
-                break;
-            case 6:
-                sheetName = project == 1 ? "Bulk - OE" : "Bulk - CO";
-                break;
-            case 7:
-                sheetName = project == 1 ? "SU - OE" : "SU - CO";
-                break;
-            default:
-                workbook.close();
-                throw new IllegalArgumentException("Invalid flow selection");
-        }
+        String sheetName = flow.sheetName(project == 1);
 
-        Sheet sheet = workbook.createSheet(sheetName);
+        Sheet sheet = workbook.getSheet(sheetName);
+        if (sheet != null) {
+            workbook.removeSheetAt(workbook.getSheetIndex(sheet));
+        }
+        sheet = workbook.createSheet(sheetName);
 
         /* ================= HEADER STYLE ================= */
 
@@ -179,15 +182,15 @@ public class LogsToExcel {
             exceptionCell.setCellStyle(wrapStyle);
 
             Cell c2 = row.createCell(2);
-            c2.setCellValue(DMP);
+            c2.setCellValue(dmp);
             c2.setCellStyle(centerStyle);
 
             Cell c3 = row.createCell(3);
-            c3.setCellValue(ENV);
+            c3.setCellValue(env);
             c3.setCellStyle(centerStyle);
 
             Cell c4 = row.createCell(4);
-            c4.setCellValue(TESTER);
+            c4.setCellValue(tester);
             c4.setCellStyle(centerStyle);
 
             row.setHeightInPoints(90);
@@ -207,10 +210,9 @@ public class LogsToExcel {
 
         /* ================= WRITE FILE ================= */
 
-        try (FileOutputStream fos = new FileOutputStream(file)) {
-            workbook.write(fos);
+        try (Workbook wb = workbook;
+                FileOutputStream fos = new FileOutputStream(file)) {
+            wb.write(fos);
         }
-
-        workbook.close();
     }
 }

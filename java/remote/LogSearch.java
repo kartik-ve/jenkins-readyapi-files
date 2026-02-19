@@ -43,7 +43,7 @@ public class LogSearch {
         String line2 = br.readLine();
         String line3 = br.readLine();
         while (line3 != null) {
-            if (line1.contains("Starting Rule Debug Messages")) {
+            if (line1.contains("Starting Rule Debug Messages") && line1.contains("Session Id=")) {
                 sessionIDs.add(line1.split("Session Id=")[1].split(" ")[0]);
             } else if (line1.contains("<Error>")) {
                 int idx = line1.indexOf("Session Id=");
