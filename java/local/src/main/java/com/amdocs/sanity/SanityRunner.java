@@ -5,6 +5,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class SanityRunner {
+
+    private SanityRunner() {
+    }
+
     public static void main(String[] args) {
         int argsForBasicSanity = 5;
         int argsForExtendedSanity = 11;
